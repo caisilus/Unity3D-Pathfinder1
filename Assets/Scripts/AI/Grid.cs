@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using Utils;
 
 public class Grid : MonoBehaviour
 {
@@ -19,20 +20,20 @@ public class Grid : MonoBehaviour
     //  Массив узлов - создаётся один раз, при первом вызове скрипта
     private PathNode[,] grid = null;
 
-    private void CheckWalkableNodes()
-    {
+    private void CheckWalkableNodes(bool shouldFade = false)
+    {           
         foreach (PathNode node in grid)
         {
             //  Пока что считаем все вершины проходимыми, без учёта препятствий
             node.walkable = true;
-            /*node.walkable = !Physics.CheckSphere(node.body.transform.position, 1);
-            if (node.walkable)
+            node.walkable = !Physics.CheckSphere(node.body.transform.position, 1);
+            if (node.walkable && shouldFade)
                 node.Fade();
             else
             {
-                node.Illuminate();
-                Debug.Log("Not walkable!");
-            }*/
+                // node.MarkUnwalkable();
+                // Debug.Log("Not walkable!");
+            }
         }
     }
 
@@ -76,18 +77,9 @@ public class Grid : MonoBehaviour
     /// </summary>
     /// <param name="startNode">Координаты начального узла пути (индексы элемента в массиве grid)</param>
     /// <param name="finishNode">Координаты конечного узла пути (индексы элемента в массиве grid)</param>
-    void calculatePath(Vector2Int startNode, Vector2Int finishNode)
+    void calculateWave(Vector2Int startNode, Vector2Int finishNode)
     {
-        //  Очищаем все узлы - сбрасываем отметку родителя, снимаем подсветку
-        foreach (var node in grid)
-        {
-            node.Fade();
-            node.ParentNode = null;
-        }
-        
-        //  На данный момент вызов этого метода не нужен, там только устанавливается проходимость вершины. Можно добавить обработку препятствий
-        CheckWalkableNodes();
-
+        Setup(true);
         //  Реализуется аналог волнового алгоритма, причём найденный путь не будет являться оптимальным 
 
         PathNode start = grid[startNode.x, startNode.y];
@@ -108,29 +100,128 @@ public class Grid : MonoBehaviour
             if (current == finishNode) break;
             //  Получаем список соседей
             var neighbours = GetNeighbours(current);
-            foreach (var node in neighbours)
+            foreach (var node in neighbours) {
                 if(grid[node.x, node.y].walkable && grid[node.x, node.y].Distance > grid[current.x, current.y].Distance + PathNode.Dist(grid[node.x, node.y], grid[current.x, current.y]))
                 {
                     grid[node.x, node.y].ParentNode = grid[current.x, current.y];
                     nodes.Enqueue(node);
                 }
+            }
         }
         //  Восстанавливаем путь от целевой к стартовой
         var pathElem = grid[finishNode.x, finishNode.y];
-        while(pathElem != null)
-        {
-            pathElem.Illuminate();
-            pathElem = pathElem.ParentNode;
-        }
+        IlluminatePath(pathElem, Color.yellow);
     }
 
-    // Метод вызывается каждый кадр
+    void calculateDeixtra(Vector2Int startNode, Vector2Int finishNode) {
+        Setup();
+
+        PathNode start = grid[startNode.x, startNode.y];
+
+        //  Начальную вершину отдельно изменяем
+        start.ParentNode = null;
+        start.Distance = 0;
+        
+        PriorityQueue<Vector2Int, float> nodes = new Utils.PriorityQueue<Vector2Int, float>();
+        //  Начальную вершину помещаем в очередь
+        nodes.Enqueue(startNode, 0);
+        //  Пока не обработаны все вершины (очередь содержит узлы для обработки)
+        while(nodes.Count != 0)
+        {
+            Vector2Int current = nodes.Dequeue();
+            //  Если достали целевую - можно заканчивать (это верно и для A*)
+            if (current == finishNode) break;
+            //  Получаем список соседей
+            var neighbours = GetNeighbours(current);
+            foreach (var node in neighbours) {
+                var gNew = grid[current.x, current.y].Distance + PathNode.Dist(grid[node.x, node.y], grid[current.x, current.y]);
+                if(grid[node.x, node.y].walkable && grid[node.x, node.y].Distance > gNew)
+                {
+                    grid[node.x, node.y].ParentNode = grid[current.x, current.y];
+
+                    nodes.Enqueue(node, gNew);
+                }
+            }
+        }
+
+        var pathElem = grid[finishNode.x, finishNode.y];
+        IlluminatePath(pathElem, Color.green);
+    }
+
+    void calculateAStar(Vector2Int startNode, Vector2Int finishNode) {
+        Setup();
+
+        PathNode start = grid[startNode.x, startNode.y];
+
+        //  Начальную вершину отдельно изменяем
+        start.ParentNode = null;
+        start.Distance = 0;
+        
+        PriorityQueue<Vector2Int, float> nodes = new Utils.PriorityQueue<Vector2Int, float>();
+        //  Начальную вершину помещаем в очередь
+        nodes.Enqueue(startNode, 0);
+        //  Пока не обработаны все вершины (очередь содержит узлы для обработки)
+        while(nodes.Count != 0)
+        {
+            Vector2Int current = nodes.Dequeue();
+            //  Если достали целевую - можно заканчивать (это верно и для A*)
+            if (current == finishNode) break;
+            //  Получаем список соседей
+            var neighbours = GetNeighbours(current);
+            foreach (var node in neighbours) {
+                var gNew = grid[current.x, current.y].Distance + PathNode.Dist(grid[node.x, node.y], grid[current.x, current.y]);
+                var fNew = gNew + PathNode.Dist(grid[node.x, node.y], grid[finishNode.x, finishNode.y]);
+                // var fPrev = grid[node.x, node.y].Distance + PathNode.Dist(grid[node.x, node.y], grid[finishNode.x, finishNode.y]);
+                if(grid[node.x, node.y].walkable && gNew < grid[node.x, node.y].Distance)
+                {
+                    grid[node.x, node.y].ParentNode = grid[current.x, current.y];
+
+                    nodes.Enqueue(node, fNew);
+                }
+            }
+        }
+
+        var pathElem = grid[finishNode.x, finishNode.y];
+        IlluminatePath(pathElem, Color.red);
+    }
+
+    void Setup(bool shouldFade = false) {
+        //  Очищаем все узлы - сбрасываем отметку родителя, снимаем подсветку
+        foreach (var node in grid)
+        {
+            if (shouldFade)
+                node.Fade();
+            node.ParentNode = null;
+        }
+        
+        //  На данный момент вызов этого метода не нужен, там только устанавливается проходимость вершины. 
+        //  Можно добавить обработку препятствий
+        CheckWalkableNodes(shouldFade);
+    }
+
+    void IlluminatePath(PathNode pathElem, Color color) {
+        Debug.Log($"Distance: {pathElem.Distance}");
+        var count = 1;
+        //  Восстанавливаем путь от целевой к стартовой
+        while(pathElem != null)
+        {
+            pathElem.Illuminate(color);
+            pathElem = pathElem.ParentNode;
+            count += 1;
+        }
+        Debug.Log($"Count: {count}");
+    }
+
     void Update()
     {
         //  Чтобы не вызывать этот метод каждый кадр, устанавливаем интервал вызова в 1000 кадров
         if (Time.frameCount < updateAtFrame) return;
         updateAtFrame = Time.frameCount + 1000;
 
-        calculatePath(new Vector2Int(0, 0), new Vector2Int(grid.GetLength(0)-1, grid.GetLength(1)-1));
+        var start = new Vector2Int(0, 0);
+        var end = new Vector2Int(grid.GetLength(0)-1, grid.GetLength(1)-1);
+        calculateWave(start, end);
+        calculateDeixtra(start, end);
+        calculateAStar(start, end);
     }
 }

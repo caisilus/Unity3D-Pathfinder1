@@ -31,6 +31,13 @@ public class PathNode //: MonoBehaviour
         set => distance = value;
     }
 
+    private float weightedDistance = float.PositiveInfinity;
+
+    public float WeightedDistance {
+        get => weightedDistance;
+        set => weightedDistance = value;
+    }
+
     /// <summary>
     /// Устанавливаем родителя и обновляем расстояние от него до текущей вершины. Неоптимально - дважды расстояние считается
     /// </summary>
@@ -40,10 +47,14 @@ public class PathNode //: MonoBehaviour
         //  Указываем родителя
         parentNode = parent;
         //  Вычисляем расстояние
-        if (parent != null)
-            distance = parent.Distance + Vector3.Distance(body.transform.position, parent.body.transform.position);
-        else
+        if (parent != null) {
+            distance = parent.Distance + PathNode.Dist(this, parent);
+            weightedDistance = parent.WeightedDistance + PathNode.Dist(parent, this);
+        }
+        else {
             distance = float.PositiveInfinity;
+            weightedDistance = float.PositiveInfinity;
+        }
     }
 
     /// <summary>
@@ -68,17 +79,25 @@ public class PathNode //: MonoBehaviour
     /// <returns></returns>
     public static float Dist(PathNode a, PathNode b)
     {
-        return Vector3.Distance(a.body.transform.position, b.body.transform.position) + 40 * Mathf.Abs(a.body.transform.position.y - b.body.transform.position.y);
+        var delta = a.body.transform.position.y - b.body.transform.position.y;
+        if (delta > 0)
+            return Vector3.Distance(a.body.transform.position, b.body.transform.position) + 10 * delta;
+        else
+            return Vector3.Distance(a.body.transform.position, b.body.transform.position);
     }
     
     /// <summary>
     /// Подсветить вершину - перекрасить в красный
     /// </summary>
-    public void Illuminate()
+    public void Illuminate(Color color)
     {
-        body.GetComponent<Renderer>().material.color = Color.red;
+        body.GetComponent<Renderer>().material.color = color;
     }
     
+    public void MarkUnwalkable() {
+        body.GetComponent<Renderer>().material.color = Color.red;
+    }
+
     /// <summary>
     /// Снять подсветку с вершины - перекрасить в синий
     /// </summary>
